@@ -5,6 +5,7 @@ import (
 	"outdoorsy_api/Models"
 	"outdoorsy_api/database"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -54,33 +55,7 @@ func GetRentals(c *fiber.Ctx) error {
 
 func GetRentalsWithParams(c *fiber.Ctx) error {
 
-	c.AllParams()
-	var params []string
-	if c.Params("price_min") != "" {
-		params = append(params, "price_min")
-	}
-
-	if c.Params("price_max") != "" {
-		params = append(params, "price_max")
-	}
-
-	if c.Params("limit") != "" {
-		params = append(params, "limit")
-	}
-
-	if c.Params("sort") != "" {
-		params = append(params, "sort")
-	}
-
-	if c.Params("ids") != "" {
-		params = append(params, "ids")
-	}
-
-	if c.Params("near") != "" {
-		params = append(params, "near")
-	}
-
-	rs := getRentalsWithParams(params)
+	rs := getRentalsWithParams(c)
 
 	var rentals []Models.RentalResponse
 
@@ -131,19 +106,70 @@ func getRentals() []Models.RentalUser {
 	return res
 }
 
-func getRentalsWithParams(params []string) []Models.RentalUser {
-	query := "SELECT * FROM rentals LEFT JOIN users ON rentals.user_id = users.id;"
+func getRentalsWithParams(c *fiber.Ctx) []Models.RentalUser {
+	query := "SELECT * FROM rentals LEFT JOIN users ON rentals.user_id = users.id"
 
-	for _, v := range params {
-		if v == "sort" {
-			query = query + " SORT BY " + v
+	and := false
+
+	if c.Query("price_min") != "" {
+		query = query + " WHERE rentals.Price_per_day > " + c.Query("price_min")
+		and = true
+	}
+
+	if c.Query("price_max") != "" {
+		queryPriceMax := " WHERE rentals.Price_per_day < " + c.Query("price_max")
+
+		if and {
+			queryPriceMax = " AND " + "rentals.Price_per_day < " + c.Query("price_max")
 		}
+
+		query = query + queryPriceMax
+		and = true
+	}
+
+	if c.Query("limit") != "" {
+		if and {
+			query = query + " AND "
+		}
+
+		query = query + " LIMIT " + c.Query("limit")
+		and = true
+	}
+
+	if c.Query("sort") != "" {
+		if and {
+			query = query + " AND "
+		}
+
+		query = query + " SORT BY " + c.Query("sort")
+		and = true
+	}
+
+	if c.Query("ids") != "" {
+		s := strings.Split(c.Query("ids"), ",")
+
+		for _, v := range s {
+			if and {
+				query = query + " AND rentals.Id = " + v
+			} else {
+				query = query + " WHERE  rentals.Id" + v
+			}
+		}
+
+	}
+
+	if c.Query("near") != "" {
+		intVar, _ := strconv.Atoi(c.Query("near"))
+
+		max := intVar + 2
+		min := intVar - 2
+		query = query + "WHERE HEIGHT between" + strconv.Itoa(min) + "and" + strconv.Itoa(max)
 	}
 
 	db := database.DB
 
 	var res []Models.RentalUser
-	db.Raw("SELECT * FROM rentals LEFT JOIN users ON rentals.user_id = users.id;").Scan(&res)
+	db.Raw(query).Scan(&res)
 
 	return res
 }
